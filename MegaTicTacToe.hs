@@ -268,18 +268,47 @@ playHM board = do
   then return b2
   else playHM b2
   
-playMM :: Board -> IO Board
-playMM board = do
-  b2 <- if (turn board == X) then moveIA board 3 else moveIA board 3
+playMM :: Board -> Int -> Int -> IO Board
+playMM board x o = do
+  b2 <- if (turn board == X) then moveIA board x else moveIA board o
   if (turn b2 == E) || (turn b2 == T)
   then return b2
-  else playMM b2
+  else playMM b2 x o
+  
+statsMM :: Int -> Int -> Int -> IO (Int,Int,Int)
+statsMM 0 _ _ = return (0,0,0)
+statsMM n x o = do
+  let board = newBoard
+  bfinal <- playMM board x o
+  (xp,op,tp) <-  statsMM (n-1) x o
+  if turn bfinal == T
+  then return (xp,op,tp+1)
+  else if resultTTT (summary bfinal) == X
+    then return (xp+1,op,tp)
+    else return (xp,op+1,tp)
+    
   
 main :: IO ()
 main = do
+  result <- statsMM 50 4 3
+  putStrLn (show result)
+  
+game :: IO ()
+game = do
   let board = newBoard
-  bfinal <- playMM board
+  bfinal <- playMM board 3 3
   putStrLn (show bfinal)
   if turn bfinal == T
   then putStrLn "The game ended in a Tie"
   else putStrLn ("The winner is " ++ show (resultTTT (summary bfinal)))
+  
+  
+{-
+collected stats
+(level X, level O) -> (win X, win O, tie)
+(3,3) -> (28,15,7)
+(4,4) -> (24,7,19)
+(3,4) -> (13,27,10)
+(5,5) -> (18,15,17)
+(4,3) -> (30,10,10)
+-}
