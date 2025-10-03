@@ -1,6 +1,11 @@
 module Main where
 
+import System.Random
 import Text.Read (readMaybe)
+import Data.Array.IO
+import Control.Monad
+
+-- Structures
 
 data Cell = E | X | O | T
   deriving Eq
@@ -45,6 +50,8 @@ showTurn t 9 = "Turn of " ++ show t ++ " in any area"
 showTurn t n = "Turn of " ++ show t ++ " in area " ++ show n
 
 ----------------------------------------------------------------------------------------------
+
+-- Game Logic
 
 emptyTTT :: [Cell]
 emptyTTT = replicate 9 E
@@ -92,6 +99,8 @@ ttts (Board _ _ _ _ _ ttt) = ttt
 
 ------------------------------------------------------------------------------------------------
 
+-- Move Logic
+
 validMove :: Board -> Int -> Int -> Bool
 validMove (Board turn area _ _ summ ttts) a c = 
   ((area == a) || (area == 9)) &&
@@ -138,6 +147,8 @@ listValids b = if area b == 9
   
 ------------------------------------------------------------------------------------------------
 
+-- minmax
+
 data GameTree = Node Board [(Int,Int,GameTree)]
   deriving (Eq, Show)
   
@@ -154,18 +165,26 @@ chanceTTT :: [Cell] -> Cell -> Int
 chanceTTT [a,b,c,d,e,f,g,h,i] p = 
   let 
     either = \x -> (x == E) || (x == p)
-    line = \x y z -> if either x && either y && either z then 1 else 0 
+    value = \x -> if (x == p) then 1 else 0
+    line = \x y z -> if either x && either y && either z 
+      then value x + value y + value z
+      else 0 
   in
-    line a b c + line d e f + line g h i +
-    line a d g + line b e h + line c f i +
-    line a e i + line c e g
+    line a b c + 
+    line d e f + 
+    line g h i +
+    line a d g + 
+    line b e h + 
+    line c f i +
+    line a e i + 
+    line c e g
 
 heuristic :: Board -> Cell -> Int
 heuristic board p = case (turn board) of
   T -> 0
   E -> if (resultTTT (summary board) == p) 
-    then 10
-    else -10
+    then 100
+    else -100
   _ -> chanceTTT (summary board) p - chanceTTT (summary board) (other p)
 
 
@@ -186,6 +205,32 @@ minmax (Node b l) p = let res = map (\(a,c,g) -> (a,c, third (minmax g p))) l in
 
   
 ------------------------------------------------------------------------------------------------
+
+-- random minmax
+
+shuffle :: [a] -> IO [a]
+shuffle xs = do
+        ar <- newArray n xs
+        forM [1..n] $ \i -> do
+            j <- randomRIO (i,n)
+            vi <- readArray ar i
+            vj <- readArray ar j
+            writeArray ar j vi
+            return vj
+  where
+    n = length xs
+    newArray :: Int -> [a] -> IO (IOArray Int a)
+    newArray n xs =  newListArray (1,n) xs
+
+minmaxRand :: GameTree -> Cell -> IO (Int,Int,Int)
+minmaxRand (Node b l) c = do
+  perm <- shuffle l
+  return (minmax (Node b perm) c)
+
+
+----------------------------------------------------------------------------------------------
+
+-- monads
 
 moveIO :: Board -> IO Board
 moveIO board = do
@@ -211,19 +256,21 @@ playHH board = do
   then return b2
   else playHH b2
 
-moveIA :: Board -> Int -> Board
-moveIA b lvl = let (a,c,v) = minmax (trim (gameTree b) lvl) (turn b) in move b a c
+moveIA :: Board -> Int -> IO Board
+moveIA b lvl = do
+  (a,c,v) <- minmaxRand (trim (gameTree b) lvl) (turn b)
+  return (move b a c)
   
 playHM :: Board -> IO Board
 playHM board = do
-  b2 <- if (turn board == X) then moveIO board else return (moveIA board 4)
+  b2 <- if (turn board == X) then moveIO board else moveIA board 4
   if (turn b2 == E) || (turn b2 == T)
   then return b2
   else playHM b2
   
 playMM :: Board -> IO Board
 playMM board = do
-  let b2 = if (turn board == X) then moveIA board 3 else moveIA board 3
+  b2 <- if (turn board == X) then moveIA board 3 else moveIA board 3
   if (turn b2 == E) || (turn b2 == T)
   then return b2
   else playMM b2
